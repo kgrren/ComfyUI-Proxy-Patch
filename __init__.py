@@ -1,6 +1,6 @@
 import os
 import json
-import glob
+import time
 import aiohttp.web
 from server import PromptServer
 
@@ -23,7 +23,8 @@ async def handle_userdata_post(request):
             f.write(body)
 
         print(f"[ProxyPatch Python] Saved file: {save_path}")
-        return aiohttp.web.json_response({"status": "success", "path": save_path})
+        # ComfyUI Vue UI が期待するレスポンス
+        return aiohttp.web.json_response({"name": filename, "path": filename})
     except Exception as e:
         print(f"[ProxyPatch Python] Save error: {e}")
         return aiohttp.web.Response(status=500, text=str(e))
@@ -39,11 +40,19 @@ async def handle_userdata_get(request):
             for root, _, filenames in os.walk(target_dir):
                 for f in filenames:
                     if f.endswith(".json"):
-                        rel_path = os.relpath(os.path.join(root, f), target_dir)
-                        # ComfyUIが期待する相対パス構造 (例: "workflows/txt2img.json" または "txt2img.json")
-                        files.append(rel_path.replace("\\", "/"))
+                        full_path = os.path.join(root, f)
+                        rel_path = os.relpath(full_path, target_dir).replace("\\", "/")
+                        stat = os.stat(full_path)
+                        
+                        # ComfyUI Vue UI (V2) が期待するオブジェクト形式
+                        files.append({
+                            "path": rel_path,
+                            "name": f,
+                            "mtime": stat.st_mtime,
+                            "size": stat.st_size
+                        })
 
-        print(f"[ProxyPatch Python] Fetched workflows list: {files}")
+        print(f"[ProxyPatch Python] Fetched {len(files)} workflows for Vue UI")
         return aiohttp.web.json_response(files)
     except Exception as e:
         print(f"[ProxyPatch Python] Get list error: {e}")
@@ -54,7 +63,7 @@ try:
     app = PromptServer.instance.app
     app.router.add_post("/api/proxy_patch/userdata/{filename:.+}", handle_userdata_post)
     app.router.add_get("/api/proxy_patch/userdata/workflows", handle_userdata_get)
-    print("[ProxyPatch Python] Registered POST & GET endpoints successfully.")
+    print("[ProxyPatch Python] Registered POST & GET endpoints for Vue UI.")
 except Exception as e:
     print(f"[ProxyPatch Python] Failed to register endpoints: {e}")
 
