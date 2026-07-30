@@ -14,12 +14,16 @@ import { app } from "../../scripts/app.js";
         let method = init.method || (input instanceof Request ? input.method : "GET");
 
         if (url) {
-            // A. 一覧取得 (GET /api/userdata/workflows ...)
-            if (url.includes("/api/userdata/workflows") && method.toUpperCase() === "GET" && !url.includes(".json")) {
+            // A. ユーザー一覧リクエスト（KeyError 回避）
+            if (url.includes("/api/users") && method.toUpperCase() === "GET") {
+                url = `${basePath}/api/proxy_patch/users`;
+            }
+            // B. ワークフロー一覧取得 (GET /api/userdata/workflows)
+            else if (url.includes("/api/userdata/workflows") && method.toUpperCase() === "GET" && !url.includes(".json")) {
                 url = `${basePath}/api/proxy_patch/userdata/workflows`;
                 console.log(`[ProxyPatch] Redirected GET workflows list to: ${url}`);
             }
-            // B. ファイル保存 (POST/PUT /api/userdata/...)
+            // C. ファイル保存 (POST/PUT /api/userdata/...)
             else if (url.includes("/api/userdata/") && (method.toUpperCase() === "POST" || method.toUpperCase() === "PUT")) {
                 let cleanPath = url.split("/api/userdata/")[1] || "";
                 cleanPath = cleanPath.replace(/%2F/g, "/");
@@ -28,7 +32,7 @@ import { app } from "../../scripts/app.js";
                 init.method = "POST";
                 console.log(`[ProxyPatch] Redirected POST/PUT save to: ${url}`);
             }
-            // C. 個別ファイル取得 (GET /api/userdata/...)
+            // D. 個別ファイル取得 (GET /api/userdata/...)
             else if (url.includes("/api/userdata/") && method.toUpperCase() === "GET") {
                 let cleanPath = url.split("/api/userdata/")[1] || "";
                 cleanPath = cleanPath.replace(/%2F/g, "/");
@@ -36,7 +40,7 @@ import { app } from "../../scripts/app.js";
                 url = `${basePath}/api/proxy_patch/userdata/${cleanPath}`;
                 console.log(`[ProxyPatch] Redirected GET single file to: ${url}`);
             }
-            // D. サブパス補正
+            // E. サブパス補正
             else if (url.startsWith("/") && !url.startsWith(basePath)) {
                 url = basePath + url;
             }
