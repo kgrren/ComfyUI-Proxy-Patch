@@ -14,25 +14,29 @@ import { app } from "../../scripts/app.js";
         let method = init.method || (input instanceof Request ? input.method : "GET");
 
         if (url) {
-            // A. ワークフロー一覧の取得 (GET /api/userdata/workflows)
+            // A. 一覧取得 (GET /api/userdata/workflows ...)
             if (url.includes("/api/userdata/workflows") && method.toUpperCase() === "GET" && !url.includes(".json")) {
                 url = `${basePath}/api/proxy_patch/userdata/workflows`;
-                console.log(`[ProxyPatch] Redirected GET workflows list request to: ${url}`);
+                console.log(`[ProxyPatch] Redirected GET workflows list to: ${url}`);
             }
-            // B. 個別ファイルの保存・読み込み (/api/userdata/...)
-            else if (url.includes("/api/userdata/")) {
+            // B. ファイル保存 (POST/PUT /api/userdata/...)
+            else if (url.includes("/api/userdata/") && (method.toUpperCase() === "POST" || method.toUpperCase() === "PUT")) {
                 let cleanPath = url.split("/api/userdata/")[1] || "";
                 cleanPath = cleanPath.replace(/%2F/g, "/");
                 
                 url = `${basePath}/api/proxy_patch/userdata/${cleanPath}`;
+                init.method = "POST";
+                console.log(`[ProxyPatch] Redirected POST/PUT save to: ${url}`);
+            }
+            // C. 個別ファイル取得 (GET /api/userdata/...)
+            else if (url.includes("/api/userdata/") && method.toUpperCase() === "GET") {
+                let cleanPath = url.split("/api/userdata/")[1] || "";
+                cleanPath = cleanPath.replace(/%2F/g, "/");
                 
-                // PUT リクエストなら POST に変換してプロキシを通過させる
-                if (method.toUpperCase() === "PUT") {
-                    init.method = "POST";
-                }
-                console.log(`[ProxyPatch] Redirected userdata request (${init.method || method}) to: ${url}`);
-            } 
-            // C. サブパス補正
+                url = `${basePath}/api/proxy_patch/userdata/${cleanPath}`;
+                console.log(`[ProxyPatch] Redirected GET single file to: ${url}`);
+            }
+            // D. サブパス補正
             else if (url.startsWith("/") && !url.startsWith(basePath)) {
                 url = basePath + url;
             }
