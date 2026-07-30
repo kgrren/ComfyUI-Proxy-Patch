@@ -1,21 +1,18 @@
 import { app } from "../../scripts/app.js";
 
 (function () {
-    // 1. 現在のページの絶対パスからベースパス（サブパス）を取得
-    // 例: "https://xxx.paperspace.com/proxy/8188/" -> "/proxy/8188"
     const pathname = window.location.pathname;
+    // "/proxy/8188/" から末尾のスラッシュを除いたベースパスを取得
     const basePath = pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
 
-    // ルート直下で動作している場合は何もしない
     if (!basePath) return;
 
-    console.log(`[ProxyPatch] Subpath detected: "${basePath}". Patching fetch and WebSocket...`);
+    console.log(`[ProxyPatch] Subpath detected: "${basePath}". Patching fetch, XHR, and WebSocket...`);
 
-    // 2. 原義の fetch を保存してオーバーライド
+    // 1. fetch のパッチ
     const originalFetch = window.fetch;
     window.fetch = async function (input, init) {
         if (typeof input === "string") {
-            // "/api/..." や "/view" などのルート相対パスをサブパス配下に書き換え
             if (input.startsWith("/") && !input.startsWith(basePath)) {
                 input = basePath + input;
             }
@@ -29,25 +26,30 @@ import { app } from "../../scripts/app.js";
         return originalFetch.call(this, input, init);
     };
 
-    // 3. 原義の WebSocket を保存してオーバーライド
+    // 2. XMLHttpRequest (XHR) のパッチ（保存処理などで使われる場合対策）
+    const originalOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function (method, url, ...args) {
+        if (typeof url === "string" && url.startsWith("/") && !url.startsWith(basePath)) {
+            url = basePath + url;
+        }
+        return originalOpen.call(this, method, url, ...args);
+    };
+
+    // 3. WebSocket のパッチ
     const OriginalWebSocket = window.WebSocket;
     window.WebSocket = function (url, protocols) {
         try {
             const parsedUrl = new URL(url);
-            // WebSocketのパスがサブパスを含んでいない場合に修正
             if (parsedUrl.pathname.startsWith("/") && !parsedUrl.pathname.startsWith(basePath)) {
                 parsedUrl.pathname = basePath + parsedUrl.pathname;
                 url = parsedUrl.toString();
             }
-        } catch (e) {
-            // URL解析エラー時はフォールバック
-        }
+        } catch (e) {}
         return new OriginalWebSocket(url, protocols);
     };
     window.WebSocket.prototype = OriginalWebSocket.prototype;
 })();
 
-// ComfyUI拡張機能として登録（拡張API用）
 app.registerExtension({
     name: "ComfyUI.ProxyPatch",
     async setup() {
