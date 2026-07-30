@@ -26,7 +26,6 @@ def build_workflow_index(target_dir):
                     if os.path.getsize(full_path) == 0:
                         continue
                     
-                    # os.path.relpath に修正
                     rel_path = os.path.relpath(full_path, target_dir).replace("\\", "/")
                     stat = os.stat(full_path)
                     
@@ -38,7 +37,7 @@ def build_workflow_index(target_dir):
                     })
     return files
 
-# --- 1. 保存ハンドラー (POST) ---
+# --- 1. 保存ハンドラー (POST / PUT) ---
 async def handle_userdata_post(request):
     try:
         filename = request.match_info.get("filename", "")
@@ -74,13 +73,13 @@ async def handle_single_file_get(request):
         base_user = get_base_user_dir()
         target_dir = os.path.join(base_user, "default", "workflows")
 
-        # インデックスファイル (.index.json) の要求時は動的に一覧を出力
-        if filename in ["workflows/.index.json", ".index.json", "workflows"]:
+        # インデックスファイル要求時
+        if filename in ["workflows/.index.json", ".index.json", "workflows", ""]:
             index_data = build_workflow_index(target_dir)
             print(f"[ProxyPatch Python] Served dynamic .index.json with {len(index_data)} workflows")
             return aiohttp.web.json_response(index_data)
 
-        # 通常ファイルの探索
+        # 通常ファイルの探索候補
         candidates = [
             os.path.abspath(os.path.join(base_user, "default", filename)),
             os.path.abspath(os.path.join(target_dir, filename)),
@@ -113,13 +112,33 @@ async def handle_users_get(request):
         "user": "default"
     })
 
-# ルート登録
+# --- 既存のルートを置換・無効化する関数 ---
+def override_route(app, method, path, handler):
+    # 既存のルートテーブルから重複するパスを削除してすり抜けを防止
+    for route in list(app.router.routes()):
+        if route.method.upper() == method.upper():
+            info = route.get_info()
+            if "path" in info and info["path"] == path:
+                app.router._resources.remove(route._resource)
+            elif "formatter" in info and info["formatter"] == path:
+                app.router._resources.remove(route._resource)
+    app.router.add_route(method, path, handler)
+
+# ルート登録（パッチ用および標準ルートの直接上書き）
 try:
     app = PromptServer.instance.app
+
+    # プロキシ経由用
     app.router.add_get("/api/proxy_patch/users", handle_users_get)
     app.router.add_get("/api/proxy_patch/userdata/{filename:.+}", handle_single_file_get)
     app.router.add_post("/api/proxy_patch/userdata/{filename:.+}", handle_userdata_post)
-    print("[ProxyPatch Python] Fixed os.path.relpath and registered endpoints successfully.")
+
+    # すり抜けて本体の user_manager に到達するリクエストを直接上書き捕捉！
+    override_route(app, "GET", "/api/users", handle_users_get)
+    override_route(app, "GET", "/api/userdata/{filename:.+}", handle_single_file_get)
+    override_route(app, "POST", "/api/userdata/{filename:.+}", handle_userdata_post)
+
+    print("[ProxyPatch Python] Successfully overridden core user_manager endpoints.")
 except Exception as e:
     print(f"[ProxyPatch Python] Failed to register endpoints: {e}")
 
