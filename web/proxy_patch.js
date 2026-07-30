@@ -18,12 +18,11 @@ import { app } from "../../scripts/app.js";
             if (url.includes("/api/users") && method.toUpperCase() === "GET") {
                 url = `${basePath}/api/proxy_patch/users`;
             }
-            // B. userdata 以下のすべてのアクセスをプロキシへリダイレクト
+            // B. userdata アクセスの強制リダイレクト
             else if (url.includes("/api/userdata")) {
                 let cleanPath = url.split("/api/userdata")[1] || "";
                 if (cleanPath.startsWith("/")) cleanPath = cleanPath.slice(1);
 
-                // クエリパラメータ (?...) を無視してパス整形
                 cleanPath = cleanPath.split("?")[0];
                 cleanPath = cleanPath.replace(/%2F/g, "/");
 
@@ -34,7 +33,6 @@ import { app } from "../../scripts/app.js";
                 if (method.toUpperCase() === "PUT") {
                     init.method = "POST";
                 }
-                console.log(`[ProxyPatch] Redirected [${method}] userdata to: ${url}`);
             }
             // C. サブパス補正
             else if (url.startsWith("/") && !url.startsWith(basePath)) {
