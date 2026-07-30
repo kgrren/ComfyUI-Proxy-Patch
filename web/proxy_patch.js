@@ -8,50 +8,49 @@ import { app } from "../../scripts/app.js";
 
     console.log(`[ProxyPatch] Subpath detected: "${basePath}". Patching fetch, XHR, and WebSocket...`);
 
-    // URL補正ヘルパー（サブパス付与 ＆ %2F のパッチ）
-    function patchUrl(urlStr) {
-        if (typeof urlStr !== "string") return urlStr;
-
-        let patched = urlStr;
-
-        // 1. サブパス(/proxy/8188)の付与
-        if (patched.startsWith("/") && !patched.startsWith(basePath)) {
-            patched = basePath + patched;
-        }
-
-        // 2. jupyter-server-proxy の 405 エラー原因となる %2F (workflows%2Fxxx.json) をデコードして標準の / に変換
-        if (patched.includes("/api/userdata/") && patched.includes("%2F")) {
-            console.log(`[ProxyPatch] Decoding %2F in userdata URL: ${patched}`);
-            patched = patched.replace(/%2F/g, "/");
-        }
-
-        return patched;
-    }
-
-    // 1. fetch のオーバーライド
+    // 1. fetch のパッチ
     const originalFetch = window.fetch;
     window.fetch = async function (input, init) {
-        if (typeof input === "string") {
-            input = patchUrl(input);
-        } else if (input instanceof Request) {
-            const patchedUrl = patchUrl(input.url);
-            if (patchedUrl !== input.url) {
-                input = new Request(patchedUrl, input);
+        let url = typeof input === "string" ? input : (input instanceof Request ? input.url : "");
+
+        if (url) {
+            // A. サブパスの補正
+            if (url.startsWith("/") && !url.startsWith(basePath)) {
+                url = basePath + url;
+            }
+
+            // B. 405エラー回避: /api/userdata/workflows%2Fxxx.json の %2F によるプロキシ破壊を迂回
+            // パスにエンコードされたスラッシュが含まれている場合、プロキシが誤解読するためパラメータ構造を補正
+            if (url.includes("/api/userdata/") && url.includes("%2F")) {
+                console.log(`[ProxyPatch] Intercepting userdata API: ${url}`);
+                // %2F を安全なデコード状態に処理
+                url = url.replace(/%2F/g, "/");
+            }
+
+            if (typeof input === "string") {
+                input = url;
+            } else if (input instanceof Request) {
+                input = new Request(url, input);
             }
         }
         return originalFetch.call(this, input, init);
     };
 
-    // 2. XMLHttpRequest (XHR) のオーバーライド
+    // 2. XMLHttpRequest (XHR) のパッチ
     const originalOpen = XMLHttpRequest.prototype.open;
     XMLHttpRequest.prototype.open = function (method, url, ...args) {
         if (typeof url === "string") {
-            url = patchUrl(url);
+            if (url.startsWith("/") && !url.startsWith(basePath)) {
+                url = basePath + url;
+            }
+            if (url.includes("/api/userdata/") && url.includes("%2F")) {
+                url = url.replace(/%2F/g, "/");
+            }
         }
         return originalOpen.call(this, method, url, ...args);
     };
 
-    // 3. WebSocket のオーバーライド
+    // 3. WebSocket のパッチ
     const OriginalWebSocket = window.WebSocket;
     window.WebSocket = function (url, protocols) {
         try {
