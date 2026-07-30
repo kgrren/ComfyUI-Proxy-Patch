@@ -6,51 +6,42 @@ import { app } from "../../scripts/app.js";
 
     if (!basePath) return;
 
-    console.log(`[ProxyPatch] Subpath detected: "${basePath}". Patching fetch, XHR, and WebSocket...`);
+    console.log(`[ProxyPatch] Subpath detected: "${basePath}". Active.`);
 
     // 1. fetch のパッチ
     const originalFetch = window.fetch;
-    window.fetch = async function (input, init) {
+    window.fetch = async function (input, init = {}) {
         let url = typeof input === "string" ? input : (input instanceof Request ? input.url : "");
 
         if (url) {
-            // A. サブパスの補正
-            if (url.startsWith("/") && !url.startsWith(basePath)) {
+            // A. userdata API の横取りとカスタム POST エンドポイントへの転送
+            if (url.includes("/api/userdata/")) {
+                // 例: .../api/userdata/workflows%2Ftxt2img.json 
+                // -> .../api/proxy_patch/userdata/workflows/txt2img.json
+                let cleanPath = url.split("/api/userdata/")[1] || "";
+                cleanPath = cleanPath.replace(/%2F/g, "/");
+                
+                url = `${basePath}/api/proxy_patch/userdata/${cleanPath}`;
+                init.method = "POST";
+                console.log(`[ProxyPatch] Redirected userdata save request to: ${url}`);
+            } else if (url.startsWith("/") && !url.startsWith(basePath)) {
+                // 通常のサブパス補正
                 url = basePath + url;
-            }
-
-            // B. 405エラー回避: /api/userdata/workflows%2Fxxx.json の %2F によるプロキシ破壊を迂回
-            // パスにエンコードされたスラッシュが含まれている場合、プロキシが誤解読するためパラメータ構造を補正
-            if (url.includes("/api/userdata/") && url.includes("%2F")) {
-                console.log(`[ProxyPatch] Intercepting userdata API: ${url}`);
-                // %2F を安全なデコード状態に処理
-                url = url.replace(/%2F/g, "/");
             }
 
             if (typeof input === "string") {
                 input = url;
             } else if (input instanceof Request) {
-                input = new Request(url, input);
+                input = new Request(url, {
+                    ...input,
+                    method: init.method || input.method
+                });
             }
         }
         return originalFetch.call(this, input, init);
     };
 
-    // 2. XMLHttpRequest (XHR) のパッチ
-    const originalOpen = XMLHttpRequest.prototype.open;
-    XMLHttpRequest.prototype.open = function (method, url, ...args) {
-        if (typeof url === "string") {
-            if (url.startsWith("/") && !url.startsWith(basePath)) {
-                url = basePath + url;
-            }
-            if (url.includes("/api/userdata/") && url.includes("%2F")) {
-                url = url.replace(/%2F/g, "/");
-            }
-        }
-        return originalOpen.call(this, method, url, ...args);
-    };
-
-    // 3. WebSocket のパッチ
+    // 2. WebSocket のパッチ
     const OriginalWebSocket = window.WebSocket;
     window.WebSocket = function (url, protocols) {
         try {
