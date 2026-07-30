@@ -19,13 +19,16 @@ import { app } from "../../scripts/app.js";
                 url = `${basePath}/api/proxy_patch/users`;
             }
             // B. userdata 以下のすべてのアクセスをプロキシへリダイレクト
-            else if (url.includes("/api/userdata/")) {
-                let cleanPath = url.split("/api/userdata/")[1] || "";
+            else if (url.includes("/api/userdata")) {
+                let cleanPath = url.split("/api/userdata")[1] || "";
+                if (cleanPath.startsWith("/")) cleanPath = cleanPath.slice(1);
+
+                // クエリパラメータ (?...) を無視してパス整形
+                cleanPath = cleanPath.split("?")[0];
                 cleanPath = cleanPath.replace(/%2F/g, "/");
 
-                // クエリ文字列 (?〜) を除去
-                cleanPath = cleanPath.split("?")[0];
-                
+                if (!cleanPath) cleanPath = "workflows/.index.json";
+
                 url = `${basePath}/api/proxy_patch/userdata/${cleanPath}`;
 
                 if (method.toUpperCase() === "PUT") {
