@@ -26,13 +26,14 @@ def build_workflow_index(target_dir):
                     if os.path.getsize(full_path) == 0:
                         continue
                     
-                    rel_path = os.relpath(full_path, target_dir).replace("\\", "/")
+                    # os.path.relpath に修正
+                    rel_path = os.path.relpath(full_path, target_dir).replace("\\", "/")
                     stat = os.stat(full_path)
                     
                     files.append({
                         "path": rel_path,
                         "name": f,
-                        "mtime": stat.st_mtime * 1000, # ミリ秒換算
+                        "mtime": stat.st_mtime * 1000,
                         "size": stat.st_size
                     })
     return files
@@ -73,8 +74,8 @@ async def handle_single_file_get(request):
         base_user = get_base_user_dir()
         target_dir = os.path.join(base_user, "default", "workflows")
 
-        # インデックスファイル (.index.json) の要求時は動的に一覧を出力！
-        if filename == "workflows/.index.json" or filename == ".index.json":
+        # インデックスファイル (.index.json) の要求時は動的に一覧を出力
+        if filename in ["workflows/.index.json", ".index.json", "workflows"]:
             index_data = build_workflow_index(target_dir)
             print(f"[ProxyPatch Python] Served dynamic .index.json with {len(index_data)} workflows")
             return aiohttp.web.json_response(index_data)
@@ -118,7 +119,7 @@ try:
     app.router.add_get("/api/proxy_patch/users", handle_users_get)
     app.router.add_get("/api/proxy_patch/userdata/{filename:.+}", handle_single_file_get)
     app.router.add_post("/api/proxy_patch/userdata/{filename:.+}", handle_userdata_post)
-    print("[ProxyPatch Python] Registered index-aware endpoints successfully.")
+    print("[ProxyPatch Python] Fixed os.path.relpath and registered endpoints successfully.")
 except Exception as e:
     print(f"[ProxyPatch Python] Failed to register endpoints: {e}")
 
