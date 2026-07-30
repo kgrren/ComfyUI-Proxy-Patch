@@ -1,41 +1,29 @@
-import os
-import folder_paths
-from aiohttp import web
+import aiohttp.web
 from server import PromptServer
 
-# webディレクトリの絶対パスを取得
-WEB_DIRECTORY = os.path.join(os.path.dirname(__file__), "web")
+WEB_DIRECTORY = "./web"
+
+# ComfyUI の既存ルートに割込パッチを適用
+try:
+    routes = PromptServer.instance.app.router
+
+    # ユーザーデータ保存用ハンドラー（PUT処理）を探して POST にも登録する
+    userdata_handler = None
+    for route in routes.routes():
+        # /api/userdata/{file:.+} の PUT ハンドラーを取得
+        if "/api/userdata" in route.resource.canonical and route.method == "PUT":
+            userdata_handler = route.handler
+            break
+
+    if userdata_handler:
+        # POST リクエストでも PUT と同じ保存処理を実行するようにルートを追加
+        routes.add_post("/api/userdata/{file:.+}", userdata_handler)
+        print("[ProxyPatch Python] Successfully registered POST fallback for /api/userdata/")
+    else:
+        print("[ProxyPatch Python] Warning: Could not find PUT handler for /api/userdata")
+
+except Exception as e:
+    print(f"[ProxyPatch Python] Error applying route patch: {e}")
 
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
-
-# ComfyUI の web サーバー (aiohttp) にミドルウェアフックを挿入
-try:
-    app = PromptServer.instance.app
-
-    @web.middleware
-    async def proxy_header_middleware(request, handler):
-        # jupyter-server-proxy 等で 405 になるリクエストヘッダーの補正
-        # OPTIONS リクエスト（Preflight）が飛んできた場合に 200 OK を返して通過させる
-        if request.method == "OPTIONS":
-            response = web.Response(status=200)
-            response.headers["Access-Control-Allow-Origin"] = "*"
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "*"
-            return response
-
-        try:
-            response = await handler(request)
-            return response
-        except web.HTTPMethodNotAllowed:
-            # メソッド不一致による 405 をレスポンスヘッダー補正でフォールバック
-            return web.Response(status=200, text="{}")
-
-    # ミドルウェアを追加
-    app.middlewares.append(proxy_header_middleware)
-    print("[ProxyPatch] Python middleware hook applied successfully.")
-
-except Exception as e:
-    print(f"[ProxyPatch] Failed to apply python middleware hook: {e}")
-
-__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]
