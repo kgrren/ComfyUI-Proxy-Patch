@@ -1,29 +1,46 @@
+import os
+import json
 import aiohttp.web
 from server import PromptServer
 
 WEB_DIRECTORY = "./web"
 
-# ComfyUI の既存ルートに割込パッチを適用
+# ComfyUI のユーザーデータ保存ロジックを直呼び出すカスタム POST ハンドラー
+async def handle_userdata_post(request):
+    try:
+        # URL パスからファイル名/相対パスを取得 (/api/proxy_patch/userdata/xxxx)
+        filename = request.match_info.get("filename", "")
+        if not filename:
+            return aiohttp.web.Response(status=400, text="Filename is required")
+
+        # リクエストボディの取得
+        body = await request.read()
+
+        # ComfyUIのユーザーデータディレクトリ（通常は user/default/ など）に安全に保存
+        # PromptServer の user_manager または直接ファイル保存
+        user_dir = getattr(PromptServer.instance, "user_dir", "./user")
+        
+        # 保存先パスの構築 (workflows/xxx.json など)
+        save_path = os.path.join(user_dir, "default", filename)
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+        with open(save_path, "wb") as f:
+            f.write(body)
+
+        print(f"[ProxyPatch Python] Successfully saved file via custom endpoint: {save_path}")
+        return aiohttp.web.json_response({"status": "success", "path": save_path})
+
+    except Exception as e:
+        print(f"[ProxyPatch Python] Save error: {e}")
+        return aiohttp.web.Response(status=500, text=str(e))
+
+# 専用ルートの登録
 try:
-    routes = PromptServer.instance.app.router
-
-    # ユーザーデータ保存用ハンドラー（PUT処理）を探して POST にも登録する
-    userdata_handler = None
-    for route in routes.routes():
-        # /api/userdata/{file:.+} の PUT ハンドラーを取得
-        if "/api/userdata" in route.resource.canonical and route.method == "PUT":
-            userdata_handler = route.handler
-            break
-
-    if userdata_handler:
-        # POST リクエストでも PUT と同じ保存処理を実行するようにルートを追加
-        routes.add_post("/api/userdata/{file:.+}", userdata_handler)
-        print("[ProxyPatch Python] Successfully registered POST fallback for /api/userdata/")
-    else:
-        print("[ProxyPatch Python] Warning: Could not find PUT handler for /api/userdata")
-
+    app = PromptServer.instance.app
+    app.router.add_post("/api/proxy_patch/userdata/{filename:.+}", handle_userdata_post)
+    print("[ProxyPatch Python] Registered endpoint: POST /api/proxy_patch/userdata/{filename:.+}")
 except Exception as e:
-    print(f"[ProxyPatch Python] Error applying route patch: {e}")
+    print(f"[ProxyPatch Python] Failed to register endpoint: {e}")
 
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
