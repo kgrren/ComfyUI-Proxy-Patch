@@ -14,19 +14,18 @@ import { app } from "../../scripts/app.js";
         let method = init.method || (input instanceof Request ? input.method : "GET");
 
         if (url) {
-            // A. 一覧取得 (GET /api/userdata/workflows...)
-            if (url.includes("/api/userdata/workflows") && method.toUpperCase() === "GET") {
+            // A. 一覧取得 (GET /api/userdata/workflows)
+            if (url.includes("/api/userdata/workflows") && method.toUpperCase() === "GET" && !url.includes(".json")) {
                 url = `${basePath}/api/proxy_patch/userdata/workflows`;
-                console.log(`[ProxyPatch] Redirected GET workflows request to: ${url}`);
+                console.log(`[ProxyPatch] Redirected GET workflows list request to: ${url}`);
             }
-            // B. ファイル保存 (POST/PUT /api/userdata/...)
+            // B. ファイル保存または個別のファイル取得 (/api/userdata/...)
             else if (url.includes("/api/userdata/")) {
                 let cleanPath = url.split("/api/userdata/")[1] || "";
                 cleanPath = cleanPath.replace(/%2F/g, "/");
                 
                 url = `${basePath}/api/proxy_patch/userdata/${cleanPath}`;
-                init.method = "POST";
-                console.log(`[ProxyPatch] Redirected POST userdata request to: ${url}`);
+                console.log(`[ProxyPatch] Redirected userdata request (${method}) to: ${url}`);
             } 
             // C. 通常のサブパス補正
             else if (url.startsWith("/") && !url.startsWith(basePath)) {
