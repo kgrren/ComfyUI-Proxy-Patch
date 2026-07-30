@@ -8,24 +8,28 @@ import { app } from "../../scripts/app.js";
 
     console.log(`[ProxyPatch] Subpath detected: "${basePath}". Active.`);
 
-    // 1. fetch のパッチ
     const originalFetch = window.fetch;
     window.fetch = async function (input, init = {}) {
         let url = typeof input === "string" ? input : (input instanceof Request ? input.url : "");
+        let method = init.method || (input instanceof Request ? input.method : "GET");
 
         if (url) {
-            // A. userdata API の横取りとカスタム POST エンドポイントへの転送
-            if (url.includes("/api/userdata/")) {
-                // 例: .../api/userdata/workflows%2Ftxt2img.json 
-                // -> .../api/proxy_patch/userdata/workflows/txt2img.json
+            // A. 一覧取得 (GET /api/userdata/workflows...)
+            if (url.includes("/api/userdata/workflows") && method.toUpperCase() === "GET") {
+                url = `${basePath}/api/proxy_patch/userdata/workflows`;
+                console.log(`[ProxyPatch] Redirected GET workflows request to: ${url}`);
+            }
+            // B. ファイル保存 (POST/PUT /api/userdata/...)
+            else if (url.includes("/api/userdata/")) {
                 let cleanPath = url.split("/api/userdata/")[1] || "";
                 cleanPath = cleanPath.replace(/%2F/g, "/");
                 
                 url = `${basePath}/api/proxy_patch/userdata/${cleanPath}`;
                 init.method = "POST";
-                console.log(`[ProxyPatch] Redirected userdata save request to: ${url}`);
-            } else if (url.startsWith("/") && !url.startsWith(basePath)) {
-                // 通常のサブパス補正
+                console.log(`[ProxyPatch] Redirected POST userdata request to: ${url}`);
+            } 
+            // C. 通常のサブパス補正
+            else if (url.startsWith("/") && !url.startsWith(basePath)) {
                 url = basePath + url;
             }
 
@@ -41,7 +45,7 @@ import { app } from "../../scripts/app.js";
         return originalFetch.call(this, input, init);
     };
 
-    // 2. WebSocket のパッチ
+    // WebSocket パッチ
     const OriginalWebSocket = window.WebSocket;
     window.WebSocket = function (url, protocols) {
         try {
